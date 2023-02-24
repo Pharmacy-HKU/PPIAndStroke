@@ -239,7 +239,7 @@ run; *127071;
 data remove;
 set st.opppi_stroke_oralclean_3;
 if st_st>st_en or ppirxen<st_st;
-run; *939 entry;
+run; *939 entry(FM: only one records); 
 data st.opppi_stroke_oralclean_3;
 set st.opppi_stroke_oralclean_3;
 if ppirxst>st_en then delete;
@@ -247,7 +247,7 @@ run; *59766;
 proc sql;
 create table st.opppi_stroke_oralclean_3 as
 select * from st.opppi_stroke_oralclean_3 where reference_key not in (select reference_key from remove);
-quit; *58749;
+quit; *59765;
 
 proc sort data=st.opppi_stroke_oralclean_3 nodupkey out=hc;
 by reference_key;
