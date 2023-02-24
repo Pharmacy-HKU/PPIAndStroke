@@ -347,9 +347,9 @@ data st.oralclean_coh1;
 set st.oralclean_coh1;
 if ppirxst<st_st and ppirxen>=st_st then ppirxst=st_st;
 if ppirxen>st_en and ppirxst<=st_en then ppirxen=st_en;
-run; *20082 entry;
+run; *20082 entry 20467; 
 proc sort data=st.oralclean_coh1 nodupkey out=hc;
-by reference_key;run; *16431;
+by reference_key;run; *16431 16759;
 
 
 /******************************************
