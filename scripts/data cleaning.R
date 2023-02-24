@@ -21,15 +21,15 @@ library(pbapply) #progress bar
 library(lubridate)
 
 shrink_interval <- function(data,idc,st,ed,gap=1){
-    data <- copy(data[,.(id=get(idc),
-                         st=lubridate::ymd(get(st)),
-                         ed=lubridate::ymd(get(ed)))])
-    setorder(data,id,st)
-    output <- data[,indx:=c(0, cumsum(as.numeric(shift(st,type="lead"))>
-                                          cummax(as.numeric(ed)+gap))[-.N]),id
-    ][,.(st=min(st),ed=max(ed)),.(id,indx)]
-    setnames(output,c("st","ed"),c(st,ed))
-    return(output)
+  data <- copy(data[,.(id=get(idc),
+                       st=lubridate::ymd(get(st)),
+                       ed=lubridate::ymd(get(ed)))])
+  setorder(data,id,st)
+  output <- data[,indx:=c(0, cumsum(as.numeric(shift(st,type="lead"))>
+                                      cummax(as.numeric(ed)+gap))[-.N]),id
+  ][,.(st=min(st),ed=max(ed)),.(id,indx)]
+  setnames(output,c("st","ed"),c(st,ed))
+  return(output)
 }
 
 new_cohort <- pblapply(list.files(pattern="conv.xlsx","M:/Cohort Raw Data (do not edit)/Stroke and PPI/cdars converted data/stroke dx",full.names = T),readxl::read_excel)
@@ -90,8 +90,8 @@ opppi_stroke_oralclean[, min_op:=min(Prescription_Start_Date), Reference_Key]
 
 
 ip_op <- merge(opppi_stroke_oralclean,
-      ppi_ip_0314[,.(Reference_Key,ip_rxst=Prescription_Start_Date)],
-      by="Reference_Key",all.x=T,allow.cartesian = T)
+               ppi_ip_0314[,.(Reference_Key,ip_rxst=Prescription_Start_Date)],
+               by="Reference_Key",all.x=T,allow.cartesian = T)
 
 ip_op2 <- ip_op[!is.na(ip_rxst) & ymd(ip_rxst)<=ymd(min_op)]
 
@@ -118,8 +118,8 @@ opppi_stroke_oralclean_3 <- merge(opppi_stroke_oralclean_3,
 opppi_stroke_oralclean_3[,`:=`(lcl2=min_lc+365,
                                y1=ymd("20030101"),
                                y2=ymd("20141231"))
-                         ][,`:=`(st_st=pmax(ymd(Date_of_Birth__yyyy_mm_dd_),y1,na.rm = T),
-                                 st_en=pmin(ymd(Date_of_Registered_Death),ymd(y2),ymd(IP_RC),na.rm = T))]
+][,`:=`(st_st=pmax(ymd(Date_of_Birth__yyyy_mm_dd_),y1,na.rm = T),
+        st_en=pmin(ymd(Date_of_Registered_Death),ymd(y2),ymd(IP_RC),na.rm = T))]
 
 remove <- opppi_stroke_oralclean_3[st_st>st_en | ymd(Prescription_End_Date)< st_st]
 
@@ -140,12 +140,51 @@ oralclean_coh1[ymd(Prescription_Start_Date)< st_st & ymd(Prescription_End_Date)>
 oralclean_coh1[ymd(Prescription_End_Date)> st_en & ymd(Prescription_Start_Date)<= st_en,]
 
 
-abcd <- shrink_interval(oralclean_coh1,id = "Reference_Key",
-                st = "Prescription_Start_Date",ed = "Prescription_End_Date",gap=30)
+temp <- shrink_interval(oralclean_coh1,id = "Reference_Key",
+                        st = "Prescription_Start_Date",ed = "Prescription_End_Date",gap=30)
+setnames(temp,"id","Reference_Key")
 
-as.data.table(merge(as.data.frame.table(table(oralclean_coh1$Reference_Key)),as.data.frame.table(table(abc$Reference_Key)),by="Var1"))[!Freq.x==Freq.y]
-as.data.table(merge(abcd[,.N,id][,setnames(.SD,"id","Reference_Key")],
-                    abc[,.N,Reference_Key],by="Reference_Key"),all=T)[!N.x==N.y]
+oralclean_coh1 <- merge(unique(oralclean_coh1[,.(Reference_Key,Sex,Date_of_Birth__yyyy_mm_dd_,Exact_date_of_birth,
+                                                 Date_of_Registered_Death,Exact_date_of_death,
+                                        Death_Cause__Main_Cause_,Prescription_Start_Date,
+                                        min_op,min_lc,IP_RC,lcl2,y1,y2,st_st,st_en)]),
+               temp[,.(Reference_Key,Prescription_Start_Date=as.character(Prescription_Start_Date),Prescription_End_Date)],
+               by=c("Reference_Key","Prescription_Start_Date"),all.y=T) # 20467
+oralclean_coh1[,`:=`(ppirxst=ymd(Prescription_Start_Date),
+                     ppirxen=ymd(Prescription_End_Date))]
+# There are huge differnece between SAS and R codes during the merging step. I
+# think it's ok since most issue are coming from the other records instead of
+# date information.
+
+
+# as.data.table(merge(as.data.frame.table(table(oralclean_coh1$Reference_Key)),as.data.frame.table(table(abc$Reference_Key)),by="Var1"))[!Freq.x==Freq.y]
+# as.data.table(merge(abcd[,.N,id][,setnames(.SD,"id","Reference_Key")],
+#                     abc[,.N,Reference_Key],by="Reference_Key"),all=T)[!N.x==N.y]
+
+# after merging the overlapping Rx interval
+remove <- oralclean_coh1[st_st>st_en| ppirxen <st_st]
+#0
+oralclean_coh1 <- oralclean_coh1[ppirxst<=st_en]
+oralclean_coh1 <- oralclean_coh1[!Reference_Key %in% remove$Reference_Key]
+
+
+oralclean_coh1[ppirxst<st_st & ppirxen>=st_st,ppirxst:=st_st]
+oralclean_coh1[ppirxen>st_en & ppirxst<=st_en,ppirxen:=st_en]
+
+oralclean_coh1[,uniqueN(Reference_Key)]
+
+# *******************************************
+#   identify stroke using admission date,
+# use only A&E and inpatient D1 data**********
+# *******************************************
+
+ppi_allstroke[,refd:=ymd(Reference_Date)]
+
+
+
+
+
+
 
 # cohort ------------------------------------------------------------------
 dx <- haven::read_sas("./data/SAS raw files/allstroke_date.sas7bdat") # 49308 records
